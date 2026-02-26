@@ -15,4 +15,5 @@ COPY create_slash_commad.py .
 EXPOSE 8181
 
 # Register slash command and start with Gunicorn
-CMD python create_slash_commad.py && gunicorn --bind 0.0.0.0:8181 --workers 1 --timeout 120 pball_pete:app
+# CMD python create_slash_commad.py && gunicorn --bind 0.0.0.0:8181 --workers 1 --timeout 120 pball_pete:app
+CMD ["sh", "-c", "python create_slash_commad.py && gunicorn --bind 0.0.0.0:8181 --workers 1 --timeout 120 pball_pete:app"]
