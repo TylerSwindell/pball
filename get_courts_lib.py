@@ -1,13 +1,9 @@
 """
-Pittsburgh RecDesk Pickleball Court Availability Scraper
-Usage: python get_courts.py
-       python get_courts.py --date 2026-03-01
-       python get_courts.py --date 2026-03-01 --time 10:00
-       python get_courts.py --location frick schenley --date 2026-03-01 --time 14:00
+Pittsburgh RecDesk Pickleball Court Availability Scraper Library
+Core functions for fetching and parsing court availability data.
 """
 
 import requests
-import argparse
 from datetime import date, datetime
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
@@ -17,15 +13,6 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
     "X-Requested-With": "XMLHttpRequest",
     "Referer": f"{BASE_URL}/Facility?type=20",
-}
-
-LOCATIONS = {
-    "allegheny": "Allegheny",
-    "bud-hammer": "Bud Hammer",
-    "fineview": "Fineview",
-    "frick": "Frick",
-    "schenley": "Schenley",
-    "washingtons-landing": "Washington",
 }
 
 
@@ -146,76 +133,82 @@ def first_available_after(slots, after_time=None):
     return first_display, total_minutes
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Pittsburgh pickleball court availability"
-    )
-    parser.add_argument(
-        "--date",
-        default=date.today().isoformat(),
-        help="Date to check (YYYY-MM-DD), default: today",
-    )
-    parser.add_argument(
-        "--time",
-        metavar="HH:MM",
-        help="Filter slots to a specific start time, e.g. 10:00",
-    )
-    parser.add_argument(
-        "--location",
-        nargs="+",
-        choices=LOCATIONS.keys(),
-        metavar="LOCATION",
-        help=f"Filter by location(s): {', '.join(LOCATIONS.keys())}",
-        default=["washingtons-landing"],
-    )
-    parser.add_argument(
-        "--list-only",
-        action="store_true",
-        help="Just list courts, don't check availability",
-    )
-    args = parser.parse_args()
+def check_court_availability(session, facilities, check_date, after_time=None):
+    """
+    Check availability for a list of facilities and return structured data.
 
-    check_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+    Returns: {
+        "Facility Name": {
+            "start_time": "HH:MM",
+            "duration_minutes": 90,
+            "duration_str": "1h 30m"
+        }
+    }
+    """
+    result = {}
 
-    session = get_session()
-    facilities = get_all_facilities(session)
-
-    if args.location:
-        keywords = [LOCATIONS[loc].lower() for loc in args.location]
-        facilities = [
-            f for f in facilities if any(kw in f["Name"].lower() for kw in keywords)
-        ]
-
-    if not facilities:
-        print("No facilities found.")
-        return
-
-    if args.list_only:
-        return
-
-    time_label = f" from {args.time}" if args.time else ""
-    print(f"\nChecking courts in {', '.join (args.location)}...")
-    print(f"\n=== Available courts on {check_date}{time_label} ===\n")
-
-    available = []
-    for f in facilities:
-        slots = get_availability(session, f["Id"], check_date)
+    for facility in facilities:
+        slots = get_availability(session, facility["Id"], check_date)
         if not slots:
             continue
-        result = first_available_after(slots, after_time=args.time)
-        if result:
-            available.append((f["Name"], result[0], result[1]))
 
-    if not available:
-        print("  No courts available.")
-        return
+        availability = first_available_after(slots, after_time=after_time)
+        if availability:
+            start_time, duration_minutes = availability
+            hrs, mins = divmod(duration_minutes, 60)
+            duration_str = f"{hrs}h {mins}m" if hrs else f"{mins}m"
 
-    name_w = max(len(name) for name, _, _ in available) + 2
-    for name, start, duration in available:
-        hrs, mins = divmod(duration, 60)
-        dur_str = f"{hrs}h {mins}m" if hrs else f"{mins}m"
-        print(f"  {name:<{name_w}}  available from {start}  ({dur_str})")
+            result[facility["Name"]] = {
+                "start_time": start_time,
+                "duration_minutes": duration_minutes,
+                "duration_str": duration_str,
+            }
+
+    return result
 
 
-if __name__ == "__main__":
-    main()
+def get_availability_dict(check_date, location_names=None, after_time=None):
+    """
+    Get court availability as a dict for specified locations and date.
+
+    Args:
+        check_date: str (YYYY-MM-DD) or date object
+        location_names: list of location display names to filter (e.g. ["Schenley", "Washington"])
+                       None or empty list returns all locations
+        after_time: str (HH:MM) to filter slots starting at or after this time
+
+    Returns: {
+        "Facility Name": {
+            "start_time": "HH:MM",
+            "duration_minutes": 90,
+            "duration_str": "1h 30m"
+        }
+    }
+    """
+    from datetime import datetime as dt
+
+    # Parse check_date if it's a string
+    if isinstance(check_date, str):
+        check_date = dt.strptime(check_date, "%Y-%m-%d").date()
+
+    # Get all facilities
+    session = get_session()
+    all_facilities = get_all_facilities(session)
+
+    # Filter by location if specified
+    if location_names:
+        location_keywords = [name.lower() for name in location_names]
+        facilities = [
+            f
+            for f in all_facilities
+            if any(kw in f["Name"].lower() for kw in location_keywords)
+        ]
+    else:
+        facilities = all_facilities
+
+    if not facilities:
+        return {}
+
+    return check_court_availability(session, facilities, check_date, after_time=after_time)
+
+

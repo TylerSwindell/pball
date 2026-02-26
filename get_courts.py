@@ -1,5 +1,5 @@
 """
-Pittsburgh RecDesk Pickleball Court Availability Scraper
+Pittsburgh RecDesk Pickleball Court Availability Scraper CLI
 Usage: python get_courts.py
        python get_courts.py --date 2026-03-01
        python get_courts.py --date 2026-03-01 --time 10:00
@@ -49,46 +49,31 @@ def main():
     )
     args = parser.parse_args()
 
-    check_date = datetime.strptime(args.date, "%Y-%m-%d").date()
-
-    session = get_courts_lib.get_session()
-    facilities = get_courts_lib.get_all_facilities(session)
-
-    if args.location:
-        keywords = [LOCATIONS[loc].lower() for loc in args.location]
-        facilities = [
-            f for f in facilities if any(kw in f["Name"].lower() for kw in keywords)
-        ]
-
-    if not facilities:
-        print("No facilities found.")
-        return
-
     if args.list_only:
         return
 
+    # Map location keys to display names for the library function
+    location_names = (
+        [LOCATIONS[loc] for loc in args.location] if args.location else None
+    )
+
     time_label = f" from {args.time}" if args.time else ""
     print(f"\nChecking courts in {', '.join (args.location)}...")
-    print(f"\n=== Available courts on {check_date}{time_label} ===\n")
+    print(f"\n=== Available courts on {args.date}{time_label} ===\n")
 
-    available = []
-    for f in facilities:
-        slots = get_courts_lib.get_availability(session, f["Id"], check_date)
-        if not slots:
-            continue
-        result = get_courts_lib.first_available_after(slots, after_time=args.time)
-        if result:
-            available.append((f["Name"], result[0], result[1]))
+    available = get_courts_lib.get_availability_dict(
+        args.date, location_names=location_names, after_time=args.time
+    )
 
     if not available:
         print("  No courts available.")
         return
 
-    name_w = max(len(name) for name, _, _ in available) + 2
-    for name, start, duration in available:
-        hrs, mins = divmod(duration, 60)
-        dur_str = f"{hrs}h {mins}m" if hrs else f"{mins}m"
-        print(f"  {name:<{name_w}}  available from {start}  ({dur_str})")
+    name_w = max(len(name) for name in available) + 2
+    for name, info in available.items():
+        print(
+            f"  {name:<{name_w}}  available from {info['start_time']}  ({info['duration_str']})"
+        )
 
 
 if __name__ == "__main__":
