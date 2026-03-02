@@ -58,7 +58,7 @@ def verify_signature(req):
         return False
 
 
-@app.route("/interactions", methods=["POST"])
+@app.route("/", methods=["POST"])
 def interactions():
     # Verify the request signature
     if not verify_signature(request):
